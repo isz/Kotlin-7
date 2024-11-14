@@ -15,24 +15,35 @@ sealed class ApiException(message: String) : Throwable(message) {
     data object UnknownException: ApiException("Unknown exception")
 }
 
-class ErrorLogger<E : Throwable> {
+interface Logger<in E: Throwable> {
+    fun log(response: NetworkResponse<*, E>)
+    fun dumpLog()
+}
 
-    val errors = mutableListOf<Pair<LocalDateTime, E>>()
+interface ErrorDumper<out E: Throwable> {
+    fun dump(): List<Pair<LocalDateTime, E>>
+}
 
-    fun log(response: NetworkResponse<*, E>) {
+class ErrorLogger<E : Throwable>: Logger<E>, ErrorDumper<E> {
+
+    private val errors = mutableListOf<Pair<LocalDateTime, E>>()
+
+    override fun log(response: NetworkResponse<*, E>) {
         if (response is Failure) {
             errors.add(response.responseDateTime to response.error)
         }
     }
 
-    fun dumpLog() {
+    override fun dumpLog() {
         errors.forEach { (date, error) ->
             println("Error at $date: ${error.message}")
         }
     }
+
+    override fun dump(): List<Pair<LocalDateTime, E>> = errors.toList()
 }
 
-fun processThrowables(logger: ErrorLogger<Throwable>) {
+fun processThrowables(logger: Logger<Throwable>) {
     logger.log(Success("Success"))
     Thread.sleep(100)
     logger.log(Success(Circle))
@@ -42,15 +53,24 @@ fun processThrowables(logger: ErrorLogger<Throwable>) {
     logger.dumpLog()
 }
 
-fun processApiErrors(apiExceptionLogger: ErrorLogger<ApiException>) {
+fun processApiErrors(apiExceptionLogger: Logger<ApiException>) {
     apiExceptionLogger.log(Success("Success"))
     Thread.sleep(100)
     apiExceptionLogger.log(Success(Circle))
     Thread.sleep(100)
-    apiExceptionLogger.log(Failure(ApiException.NetworkException))
+
+    val f = Failure(ApiException.NetworkException)
+    apiExceptionLogger.log(f)
 
     apiExceptionLogger.dumpLog()
 }
+
+fun dumpErrors(logger: ErrorDumper<Throwable>) {
+    logger.dump().forEach { (date, error) ->
+        println("Error at $date: ${error.message}")
+    }
+}
+
 
 fun main() {
     val logger = ErrorLogger<Throwable>()
@@ -60,5 +80,8 @@ fun main() {
 
     println("Processing Api:")
     processApiErrors(logger)
+
+    println("Dump all errors:")
+    dumpErrors(logger)
 }
 
